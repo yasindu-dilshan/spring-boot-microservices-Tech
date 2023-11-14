@@ -1,5 +1,6 @@
 package com.micro.inventoryservice.controller;
 
+import com.micro.inventoryservice.dto.InventoryResponse;
 import com.micro.inventoryservice.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,7 +17,7 @@ public class InventoryController {
 
     // http://localhost:8082/api/inventory?sku-code=pixe_7&sku-code=pixel_8
     @ResponseStatus(HttpStatus.OK)
-    public boolean isInStock(@RequestParam List<String> skuCodes){
+    public List<InventoryResponse> isInStock(@RequestParam List<String> skuCodes){
         return inventoryService.isInStock(skuCodes);
     }
 
