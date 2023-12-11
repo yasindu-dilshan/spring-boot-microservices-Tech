@@ -1,5 +1,6 @@
 package com.micro.orderservice.service;
 
+import com.micro.orderservice.dto.InventoryResponse;
 import com.micro.orderservice.dto.OrderLineItemsDto;
 import com.micro.orderservice.dto.OrderRequest;
 import com.micro.orderservice.model.Order;
@@ -9,7 +10,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,30 +22,49 @@ import java.util.UUID;
 @Transactional
 public class OrderService {
 
+    private final Logger logger = LoggerFactory.getLogger(OrderService.class);
+
     private final OrderRepository orderRepository;
-    private final WebClient webClient;
+    private final WebClient.Builder webClientBuilder;
 
-    public void placeOrder(OrderRequest orderRequest) {
-        Order order = new Order();
-        order.setOrderNumber(UUID.randomUUID().toString());
+    public String placeOrder(OrderRequest orderRequest) {
+        try{
+            Order order = new Order();
+            order.setOrderNumber(UUID.randomUUID().toString());
 
-        List<OrderLineItems> orderLineItems = orderRequest.getOrderLineItemsDtoList()
-                .stream()
-                .map(this::mapToDto).toList();
+            List<OrderLineItems> orderLineItems = orderRequest.getOrderLineItemsDtoList()
+                    .stream()
+                    .map(this::mapToDto).toList();
 
-        order.setOrderLineItemsList(orderLineItems);
+            order.setOrderLineItemsList(orderLineItems);
 
-        // call inventory service, and place order if product is in stock
-        Boolean result = webClient.get()
-                .uri("http://localhost:8082/api/inventory")
-                .retrieve()
-                .bodyToMono(Boolean.class)
-                .block();
-        if(result){
-            orderRepository.save(order);
-        }else{
-            throw new IllegalArgumentException("Product is not in stock, pleas try again later");
+            List<String> skuCodes = order.getOrderLineItemsList().stream()
+                    .map(OrderLineItems::getSkuCode)
+                    .toList();
+
+            // call inventory service, and place order if product is in stock
+            InventoryResponse[] inventoryResponseArray = webClientBuilder.build().get()
+                    .uri("http://inventory-service/api/inventory",
+                            uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
+                    .retrieve()
+                    .bodyToMono(InventoryResponse[].class)
+                    .block();
+
+            boolean allProductsInStock = Arrays.stream(inventoryResponseArray)
+                    .allMatch(InventoryResponse::isInStock);
+
+            if(allProductsInStock){
+                orderRepository.save(order);
+                return "Order place successfully";
+            }else{
+                throw new IllegalArgumentException("Product is not in stock, pleas try again later");
+            }
+        }catch (Exception e){
+            logger.error("<OrderService> Error while placing an order ", e);
+            return "Order failed";
         }
+
+
     }
 
     private OrderLineItems mapToDto(OrderLineItemsDto orderLineItemsDto) {
